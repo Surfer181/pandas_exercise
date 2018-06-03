@@ -1,11 +1,13 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import division
+
 import os
 import sys
-from pprint import pprint
 from collections import OrderedDict
 import itertools
 import pandas as pd
+
 
 OUTPUT_FILE_NAME = 'output.xlsx'
 
@@ -98,6 +100,60 @@ def part1():
     return output
 
 
+def part2():
+    patent_ipc_combinations = init_an_order_dict(year_list_pured, init_value=None)
+    part2_creation = init_an_order_dict(year_list_pured)
+    part2_reuse = init_an_order_dict(year_list_pured)
+    ipc_combination_list = []
+    for line_no in xrange(0, len(year_list)):  # 遍历Excel表格，统计每行的IPC组合并按年累加
+        ipc_str = str(col_ipc[line_no]) if col_ipc[line_no] != 'nan' else ''
+        ipc_list = [ipc[0:4] for ipc in ipc_str.split('; ')]  # 取前4个字符
+        ipc_set = set(ipc_list)  # 每个专利去重后的IPC
+        combinations = [i for i in itertools.combinations(ipc_set, 2)]  # Cn2  每个专利的IPC组合
+        ipc_combination_list.append(combinations)
+        year = year_list[line_no]
+        if patent_ipc_combinations[year] is None:
+            patent_ipc_combinations[year] = []
+        else:
+            patent_ipc_combinations[year] += combinations
+
+    for y in year_list_pured:
+        n_years_before_data = []  # 5年窗口期所有组合
+        if year_list_pured.index(y) == 0:
+            pass  # 第一年不统计
+        elif int(year_list_pured[0]) + 5 <= int(y):  # 前面有多于5年只算前5年, 5年是看数不是看个数
+            for i in range(1, 6):
+                if y-i in year_list_pured:
+                    n_years_before_data += patent_ipc_combinations[y - i]
+        else:  # 前面没有5年的有几年算几年
+            for j in range(0, year_list_pured.index(y) + 1):
+                if y-j in year_list_pured:
+                    n_years_before_data += patent_ipc_combinations[y - j]
+
+        new_combination = [c1 for c1 in patent_ipc_combinations[y] if c1 not in n_years_before_data]  # 当年新增的组合
+        repeated_combination = [c2 for c2 in patent_ipc_combinations[y] if c2 in n_years_before_data]  # 旧组合
+
+        creation_top_value = len(new_combination)  # 分子: 新增年份的新组合数
+        creation_bottom_value = len(patent_ipc_combinations[y])  # 分母：新增年份的组合数
+        # 如果分子或分母有一个是0则值为0
+        part2_creation[y] = '0' if creation_bottom_value == 0 or creation_bottom_value == 0 else "=%s/%s" % (
+            creation_top_value, creation_bottom_value)
+
+        reuse_top_value = 0  # 分子：旧的组合对应的专利数
+        for patent in ipc_combination_list:
+            if set(patent) & set(repeated_combination):
+                reuse_top_value += 1
+
+        reuse_bottom_value = creation_bottom_value  # 分母：新增年份的组合数, 和 creation 一样
+
+        part2_reuse[y] = '0' if reuse_bottom_value == 0 or reuse_top_value == 0 else "=%s/%s" % (
+            reuse_top_value, reuse_bottom_value)
+
+    return [
+        [company_code, str(nian), part2_creation[nian], part2_reuse[nian]] for nian in year_list_pured
+    ]
+
+
 def part3():
     output_list = list()
     for i in xrange(0, col_gong_kai_hao.count()):
@@ -135,8 +191,39 @@ def part4():
     return output_list
 
 
-def part2():
-    pass
+def write_part1():
+    try:
+        result1 = pd.concat(part1_to_write)
+        result1.to_excel(
+            writer, sheet_name='part1', index=False,
+            header=[u'公司', u'年份', u'专利总数', u'被引次数', u'被引且出现在D列', u'申请人数大于2', u'申请人数大于2且含大学']
+        )
+    except:
+        print "part1 error, pass..."
+
+
+def write_part2():
+    try:
+        result2 = pd.concat(part2_to_write)
+        result2.to_excel(writer, sheet_name='part2', header=[u'公司', u'年份', u'creation', u'reuse'], index=False)
+    except:
+        print "part2 error, pass..."
+
+
+def write_part3():
+    try:
+        result3 = pd.concat(part3_to_write)
+        result3.to_excel(writer, sheet_name='part3', header=[u'公司', u'序号', u'A', u'B'], index=False)
+    except:
+        print "part3 error, pass..."
+
+
+def write_part4():
+    try:
+        result4 = pd.concat(part4_to_write)
+        result4.to_excel(writer, sheet_name='part4', header=[u'公司', u'序号', u'A', u'B'], index=False)
+    except:
+        print "part4 error, pass..."
 
 
 if __name__ == '__main__':
@@ -158,7 +245,7 @@ if __name__ == '__main__':
     for xls in files:
         base_name = os.path.basename(xls)
         company_code = str(base_name.split('.')[0])
-        print(company_code)
+        print '\n', company_code
 
         df = pd.read_excel(xls)
 
@@ -167,6 +254,7 @@ if __name__ == '__main__':
         col_xu_hao = df[u'序号']
         col_gong_kai_hao = df[u'公开（公告）号']  # D列
         col_yin_zheng_zhuan_li = df[u'引证专利']  # R列
+        col_ipc = df['IPC']  # P列
         col_bei_yin_zheng_zhuan_li = df[u'被引证专利']  # S列
         col_bei_yin_zheng_ci_shu = df[u'被引证次数']
         col_yin_zheng_shen_qing_ren = df[u'引证申请人']  # T
@@ -176,48 +264,35 @@ if __name__ == '__main__':
         year_list_pured = sorted(set(year_list))
 
         if part_arg == 'part1':
-            try:
-                part1_to_write.append(pd.DataFrame(part1()))
-            except:
-                print "%s part1 error, pass..." % company_code
+            part1_to_write.append(pd.DataFrame(part1()))
         elif part_arg == 'part2':
-            pass
+            part2_to_write.append(pd.DataFrame(part2()))
         elif part_arg == 'part3':
-            try:
-                part3_to_write.append(pd.DataFrame(part3()))
-            except:
-                print "%s part3 error, pass..." % company_code
+            part3_to_write.append(pd.DataFrame(part3()))
         elif part_arg == 'part4':
-            try:
-                part4_to_write.append(pd.DataFrame(part4()))
-            except:
-                print "%s part4 error, pass..." % company_code
+            part4_to_write.append(pd.DataFrame(part4()))
         elif part_arg == 'all':
-            try:
-                part1_to_write.append(pd.DataFrame(part1()))
-            except:
-                print "%s part1 error, pass..." % company_code
-            try:
-                part3_to_write.append(pd.DataFrame(part3()))
-            except:
-                print "%s part3 error, pass..." % company_code
-            try:
-                part4_to_write.append(pd.DataFrame(part4()))
-            except:
-                print "%s part4 error, pass..." % company_code
+            part1_to_write.append(pd.DataFrame(part1()))
+            part2_to_write.append(pd.DataFrame(part2()))
+            part3_to_write.append(pd.DataFrame(part3()))
+            part4_to_write.append(pd.DataFrame(part4()))
         else:
             print(help_text)
             sys.exit(1)
 
-    result1 = pd.concat(part1_to_write)
-    result1.to_excel(
-        writer, sheet_name='part1', index=False,
-        header=[u'公司', u'年份', u'专利总数', u'被引次数', u'被引且出现在D列', u'申请人数大于2', u'申请人数大于2且含大学']
-    )
-    result3 = pd.concat(part3_to_write)
-    result3.to_excel(writer, sheet_name='part3', header=[u'公司', u'序号', u'A', u'B'], index=False)
-    result4 = pd.concat(part4_to_write)
-    result4.to_excel(writer, sheet_name='part4', header=[u'公司', u'序号', u'A', u'B'], index=False)
+    if part_arg == 'part1':
+        write_part1()
+    elif part_arg == 'part2':
+        write_part2()
+    elif part_arg == 'part3':
+        write_part3()
+    elif part_arg == 'part4':
+        write_part4()
+    else:
+        write_part1()
+        write_part2()
+        write_part3()
+        write_part4()
 
     writer.save()
     print("\nDone! 结果已输出到 %s 中\n" % OUTPUT_FILE_NAME)
