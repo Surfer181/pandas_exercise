@@ -6,9 +6,11 @@ import os
 import sys
 from collections import OrderedDict
 import itertools
+
 import pandas as pd
 
 
+PERIOD = 3
 OUTPUT_FILE_NAME = 'output.xlsx'
 
 help_text = """Please read this help:
@@ -104,31 +106,33 @@ def part2():
     patent_ipc_combinations = init_an_order_dict(year_list_pured, init_value=None)
     part2_creation = init_an_order_dict(year_list_pured)
     part2_reuse = init_an_order_dict(year_list_pured)
-    ipc_combination_list = []
+    ipc_combination_list = dict()
     for line_no in xrange(0, len(year_list)):  # 遍历Excel表格，统计每行的IPC组合并按年累加
-        ipc_str = str(col_ipc[line_no]) if col_ipc[line_no] != 'nan' else ''
+        ipc_str = str(col_ipc[line_no]) if str(col_ipc[line_no]) != 'nan' else ''
         ipc_list = [ipc[0:4] for ipc in ipc_str.split('; ')]  # 取前4个字符
         ipc_set = set(ipc_list)  # 每个专利去重后的IPC
-        combinations = [i for i in itertools.combinations(ipc_set, 2)]  # Cn2  每个专利的IPC组合
-        ipc_combination_list.append(combinations)
+        # TODO: 为什么使用list 每个list元素在append下一个list后会变？因此只能用元组？
+        cbs = tuple([i for i in itertools.combinations(ipc_set, 2)])  # Cn2  每个专利的IPC组合
+        ipc_combination_list[line_no] = cbs
+
         year = year_list[line_no]
         if patent_ipc_combinations[year] is None:
-            patent_ipc_combinations[year] = []
+            patent_ipc_combinations[year] = set(cbs)
         else:
-            patent_ipc_combinations[year] += combinations
+            patent_ipc_combinations[year] = set(cbs) | set(patent_ipc_combinations[year])
 
     for y in year_list_pured:
-        n_years_before_data = []  # 5年窗口期所有组合
+        n_years_before_data = []  # 窗口期所有组合
         if year_list_pured.index(y) == 0:
             pass  # 第一年不统计
-        elif int(year_list_pured[0]) + 5 <= int(y):  # 前面有多于5年只算前5年, 5年是看数不是看个数
-            for i in range(1, 6):
+        elif int(year_list_pured[0]) + PERIOD <= int(y):  # 前面有多于5年只算前5年, 5年是看数不是看个数
+            for i in range(1, PERIOD + 1):
                 if y-i in year_list_pured:
                     n_years_before_data += patent_ipc_combinations[y - i]
         else:  # 前面没有5年的有几年算几年
             for j in range(0, year_list_pured.index(y) + 1):
                 if y-j in year_list_pured:
-                    n_years_before_data += patent_ipc_combinations[y - j]
+                    n_years_before_data += list(patent_ipc_combinations[y - j])
 
         new_combination = [c1 for c1 in patent_ipc_combinations[y] if c1 not in n_years_before_data]  # 当年新增的组合
         repeated_combination = [c2 for c2 in patent_ipc_combinations[y] if c2 in n_years_before_data]  # 旧组合
@@ -138,14 +142,15 @@ def part2():
         # 如果分子或分母有一个是0则值为0
         part2_creation[y] = '0' if creation_bottom_value == 0 or creation_bottom_value == 0 else "=%s/%s" % (
             creation_top_value, creation_bottom_value)
+        # part2_creation[y] = '=%s/%s' % (creation_top_value, creation_bottom_value)
 
         reuse_top_value = 0  # 分子：旧的组合对应的专利数
-        for patent in ipc_combination_list:
-            if set(patent) & set(repeated_combination):
+        for index_no in xrange(0, len(ipc_combination_list.keys())):
+            date = col_shen_qing_ri[index_no]
+            if unicode(date.year) == unicode(y) and set(ipc_combination_list[index_no]) & set(repeated_combination):
                 reuse_top_value += 1
 
         reuse_bottom_value = creation_bottom_value  # 分母：新增年份的组合数, 和 creation 一样
-
         part2_reuse[y] = '0' if reuse_bottom_value == 0 or reuse_top_value == 0 else "=%s/%s" % (
             reuse_top_value, reuse_bottom_value)
 
